@@ -19,14 +19,17 @@ FILES = []
               type=click.Path(exists=True), help='Download path.')
 @click.option('--filename', default='output.mp4', help='Output filename of download.')
 @click.option('--info', is_flag=True, help='Display info about media stream.')
+@click.option('--only_audio', is_flag=True, help='Save the audio only from YouTube media stream.')
+@click.option('--audio_format', help='Output format of audio only stream.')
 
-def main(filename, path, url, info):
+
+def main(filename, path, url, info, only_audio, audio_format):
     """This script downloads media from a YouTube link or an M3U8 playlist file."""
     os.system('clear')
     if '.m3u8' in url:
         download_m3u8(filename, path, url)
     else:
-        download_youtube(path, url, info)
+        download_youtube(path, url, info, only_audio, audio_format)
     
     return
 
@@ -54,8 +57,10 @@ def download_m3u8(filename, path, url):
     except:
         logerror()
 
-def download_youtube(path, url, info):
+def download_youtube(path, url, info, only_audio, audio_format):
     """Downloads YouTube link."""
+    print "only_audio is " + str(only_audio)
+
     try:
         yt_video = YouTube(url, on_progress_callback=progress_function,
                            on_complete_callback=filetrack_function)
@@ -69,9 +74,9 @@ def download_youtube(path, url, info):
             return
 
         print "Determining streams:"
-        streams = stream_determinator(yt_video)
+        streams = stream_determinator(yt_video, only_audio)
 
-        print "\nDownloading YouTube video '" + title + "' to " + path
+        print "\nDownloading YouTube media '" + title + "' to " + path
 
         for media in streams:
             if len(streams) > 1:
@@ -85,35 +90,45 @@ def download_youtube(path, url, info):
 
         if len(streams) > 1:
             combine_function(path, title)
+
+        if only_audio and audio_format:
+            convert_function(path, title, audio_format)
+        else:
+            print "Done."
         
         return
 
     except (exceptions.RegexMatchError, exceptions.VideoUnavailable):
         logerror()
 
-def stream_determinator(yt_video):
+def stream_determinator(yt_video, only_audio):
     """Determines if a seperate 1080p mp4 video stream exists. \
     If it does, download it and its associated audio stream. \
     Else download highest resolution video stream."""
     try:
         streams = []
 
-        video = yt_video.streams.filter(only_audio=False, only_video=True,
+        if only_audio:
+            audio = yt_video.streams.filter(only_audio=True, only_video=False,
+                                            ).order_by('abr').desc().first()
+            streams.append(audio)
+        else:
+            video = yt_video.streams.filter(only_audio=False, only_video=True,
                                         subtype='mp4').order_by('resolution').desc().first()
 
-        if video is not None:
-            print " + Found seperate video stream - adding"
-            audio = yt_video.streams.filter(only_audio=True, only_video=False,
-                                            subtype='mp4').order_by('abr').desc().first()
-            if audio is not None:
-                print " + Found seperate audio stream - adding"
-                streams.append(audio)
-        else:
-            print " - Only single stream detected"
-            video = yt_video.streams.filter(only_audio=False,
-                                            subtype='mp4').order_by('resolution').desc().first()
+            if video is not None:
+                print " + Found seperate video stream - adding"
+                audio = yt_video.streams.filter(only_audio=True, only_video=False,
+                                                subtype='mp4').order_by('abr').desc().first()
+                if audio is not None:
+                    print " + Found seperate audio stream - adding"
+                    streams.append(audio)
+            else:
+                print " - Only single stream detected"
+                video = yt_video.streams.filter(only_audio=False,
+                                                subtype='mp4').order_by('resolution').desc().first()
 
-        streams.append(video)
+            streams.append(video)
 
         return streams
 
@@ -145,7 +160,7 @@ def get_terminal_size():
     return int(rows), int(columns)
 
 def filetrack_function(stream, file_handle):
-    """Tracksd which files have been downloaded. Used by combine function."""
+    """Tracks which files have been downloaded. Used by combine function."""
     try:
         FILES.append(file_handle.name)
         return
@@ -169,7 +184,31 @@ def combine_function(path, title):
         cmd = "ffmpeg -y -i '" + audio + "' -i '" + video + \
               "' -c copy '" + outpath + ".mp4' -loglevel error"
         print "Combining..."
-        print cmd
+        #print cmd
+        ret = subprocess.call(cmd, shell=True)
+
+        if ret == 0:
+            print "Done."
+
+        cleanup()
+        return
+
+    except:
+        logerror()
+
+def convert_function(path, title, audio_format):
+    """Converts YouTube audio stream files to the desired format."""
+    try:
+        title = title.replace(":", "-")
+        for mediafile in FILES:
+            audio = mediafile
+
+        outpath = os.path.join(path, title)
+        outpath = outpath.replace("'", "")
+
+        cmd = "ffmpeg -y -i '" + audio + "' -vn '" + outpath + "." + audio_format + "' -loglevel error"
+        print "Converting " + title + " to " + audio_format + "..."
+        #print cmd
         ret = subprocess.call(cmd, shell=True)
 
         if ret == 0:

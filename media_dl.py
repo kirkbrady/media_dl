@@ -21,16 +21,17 @@ FILES = []
 @click.option('--info', is_flag=True, help='Display info about media stream.')
 @click.option('--only_audio', is_flag=True, help='Save the audio only from YouTube media stream.')
 @click.option('--audio_format', help='Output format of audio only stream.')
+@click.option('--no_delete', is_flag=True,
+              help='Do not delete the YouTube stream files after downloading.')
 
-
-def main(filename, path, url, info, only_audio, audio_format):
+def main(filename, path, url, info, only_audio, audio_format, no_delete):
     """This script downloads media from a YouTube link or an M3U8 playlist file."""
     os.system('clear')
     if '.m3u8' in url:
         download_m3u8(filename, path, url)
     else:
-        download_youtube(path, url, info, only_audio, audio_format)
-    
+        download_youtube(path, url, info, only_audio, audio_format, no_delete)
+
     return
 
 def logerror():
@@ -51,13 +52,13 @@ def download_m3u8(filename, path, url):
 
         if ret == 0:
             print "Done."
-        
+
         return
 
     except:
         logerror()
 
-def download_youtube(path, url, info, only_audio, audio_format):
+def download_youtube(path, url, info, only_audio, audio_format, no_delete):
     """Downloads YouTube link."""
     print "only_audio is " + str(only_audio)
 
@@ -89,13 +90,13 @@ def download_youtube(path, url, info, only_audio, audio_format):
             print "\n"
 
         if len(streams) > 1:
-            combine_function(path, title)
+            combine_function(path, title, no_delete)
 
         if only_audio and audio_format:
-            convert_function(path, title, audio_format)
+            convert_function(path, title, audio_format, no_delete)
         else:
             print "Done."
-        
+
         return
 
     except (exceptions.RegexMatchError, exceptions.VideoUnavailable):
@@ -110,11 +111,11 @@ def stream_determinator(yt_video, only_audio):
 
         if only_audio:
             audio = yt_video.streams.filter(only_audio=True, only_video=False,
-                                            ).order_by('abr').desc().first()
+                                           ).order_by('abr').desc().first()
             streams.append(audio)
         else:
             video = yt_video.streams.filter(only_audio=False, only_video=True,
-                                        subtype='mp4').order_by('resolution').desc().first()
+                                            subtype='mp4').order_by('resolution').desc().first()
 
             if video is not None:
                 print " + Found seperate video stream - adding"
@@ -168,10 +169,11 @@ def filetrack_function(stream, file_handle):
     except:
         logerror()
 
-def combine_function(path, title):
+def combine_function(path, title, no_delete):
     """Combines seperate audio and video stream files."""
     try:
         title = title.replace(":", "-")
+        title = title.replace("/", "-")
         for mediafile in FILES:
             if 'audio-' in mediafile:
                 audio = mediafile
@@ -190,13 +192,15 @@ def combine_function(path, title):
         if ret == 0:
             print "Done."
 
-        cleanup()
+        if no_delete is None:
+            cleanup()
+
         return
 
     except:
         logerror()
 
-def convert_function(path, title, audio_format):
+def convert_function(path, title, audio_format, no_delete):
     """Converts YouTube audio stream files to the desired format."""
     try:
         title = title.replace(":", "-")
@@ -206,7 +210,8 @@ def convert_function(path, title, audio_format):
         outpath = os.path.join(path, title)
         outpath = outpath.replace("'", "")
 
-        cmd = "ffmpeg -y -i '" + audio + "' -vn '" + outpath + "." + audio_format + "' -loglevel error"
+        cmd = "ffmpeg -y -i '" + audio + "' -vn '" + outpath + "." + \
+               audio_format + "' -loglevel error"
         print "Converting " + title + " to " + audio_format + "..."
         #print cmd
         ret = subprocess.call(cmd, shell=True)
@@ -214,7 +219,9 @@ def convert_function(path, title, audio_format):
         if ret == 0:
             print "Done."
 
-        cleanup()
+        if no_delete is None:
+            cleanup()
+
         return
 
     except:

@@ -7,7 +7,8 @@ setup(
     py_modules=['media_dl'],
     install_requires=[
         'Click',
-        'pytube'
+        'pytube',
+        'ffmpeg'
     ],
     entry_points='''
         [console_scripts]
